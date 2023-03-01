@@ -1,0 +1,4 @@
+integrations:
+  fastai:
+    type: dataset
+    ref: paperspace/dsr4qbcrcg662pf:latest
