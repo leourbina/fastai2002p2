@@ -1,4 +1,9 @@
 sd-concept-output/
 .ipynb_checkpoints/
+*.egg
+*.egg-info
+build
+*.pyc
 steps
 data
+**/*.0..1-py3..9..egg
