@@ -86,7 +86,7 @@ def get_grid(
     elif ncols: nrows = nrows or int(np.ceil(n/ncols))
     else:
         nrows = int(math.sqrt(n))
-        ncols = int(np.floor(n/nrows))
+        ncols = int(np.ceil(n/nrows))
     fig, axs = subplots(nrows, ncols, **kwargs)
     for i in range(n, nrows*ncols): axs.flat[i].set_axis_off()
     if title is not None: fig.suptitle(title, weight=weight, size=size)

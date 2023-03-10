@@ -122,7 +122,6 @@ class Learner():
     def _fit(self, train, valid):
         for self.epoch_idx, self.epoch in enumerate(self.epochs):
             if train: 
-                self.training = True
                 self.one_epoch(True)
             if valid:
                 with torch.no_grad():
@@ -155,6 +154,10 @@ class Learner():
     def zero_grad(self): self.opt.zero_grad()
 
     def _callback(self, method_name): run_cbs(self.cbs, method_name, self)
+    
+    @property
+    def training(self):
+        return self.model.training
 
 # %% ../nbs/clean/09_learner.ipynb 40
 class ProgressCB(Callback):
