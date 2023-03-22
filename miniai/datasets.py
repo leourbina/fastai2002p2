@@ -23,7 +23,7 @@ import torchvision.transforms.functional as TF
 from fastcore.test import test_close
 
 # %% auto 0
-__all__ = ['inplace', 'collate_dict', 'show_image', 'subplots', 'get_grid', 'show_images', 'DataLoaders']
+__all__ = ['inplace', 'collate_dict', 'show_image', 'subplots', 'get_grid', 'show_images', 'get_dls', 'DataLoaders']
 
 # %% ../nbs/clean/05_datasets.ipynb 21
 def inplace(f):
@@ -105,10 +105,17 @@ def show_images(ims:list,
 
 
 # %% ../nbs/clean/05_datasets.ipynb 41
+def get_dls(train_ds, valid_ds, bs, **kwargs):
+    return (
+        DataLoader(train_ds, batch_size=bs, shuffle=True, **kwargs),
+        DataLoader(valid_ds, batch_size=bs*2, **kwargs))
+
 class DataLoaders:
-    def __init__(self, *dls): self.train, self.valid = dls[:2]
-    
+    def __init__(self, *dls): self.train,self.valid = dls[:2]
+
     @classmethod
-    def from_dd(cls, dd, batch_size, as_tuple=True, **kwargs):
+    def from_dd(cls, dd, bs, as_tuple=True, **kwargs):
         f = collate_dict(dd['train'])
-        return cls(*get_dls(*dd.values(), bs=batch_size, collate_fn=f, **kwargs))
+        train_dl, valid_dl, *_ = dd.values()
+        args = get_dls(train_dl, valid_dl, bs=bs, collate_fn=f, **kwargs)
+        return cls(*args)

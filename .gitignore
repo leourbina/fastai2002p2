@@ -8,3 +8,5 @@ steps
 data
 **/*.0..1-py3..9..egg
 *_old.py
+**/runs
+**/wandb

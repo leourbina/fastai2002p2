@@ -35,7 +35,7 @@ act_gr = partial(GeneralReLU, leak=0.1, sub=0.4)
 
 # %% ../nbs/clean/13_resnet.ipynb 13
 def _conv_block(ni, nf, stride, act=act_gr, norm=None, ks=3):
-    return nn.Sequential(conv(ni, nf, stride=1, act=act, norm=norm),
+    return nn.Sequential(conv(ni, nf, stride=1, act=act, norm=norm, ks=ks),
                         conv(nf, nf, stride=stride, act=None, norm=norm, ks=ks))
 
 class ResBlock(nn.Module):

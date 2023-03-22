@@ -2,10 +2,10 @@
 
 # %% auto 0
 __all__ = ['torch_device', 'device', 'Learner', 'Callback', 'run_cbs', 'CancelFitException', 'CancelBatchException',
-           'CancelEpochException', 'to_cpu', 'MetricsCB', 'DeviceCB', 'with_cbs', 'ProgressCB', 'MomentumLearner',
-           'LRFinderCB', 'lr_find', 'SingleBatchCB']
+           'CancelEpochException', 'to_cpu', 'M', 'Recorder', 'MetricsCB', 'DeviceCB', 'with_cbs', 'ProgressCB',
+           'TensorboardCB', 'Config', 'WandBCB', 'MomentumLearner', 'LRFinderCB', 'lr_find', 'SingleBatchCB']
 
-# %% ../nbs/clean/09_learner.ipynb 1
+# %% ../nbs/clean/09_learner.ipynb 2
 import math
 import torch
 from torch import nn, tensor
@@ -23,10 +23,10 @@ import torch.nn.functional as F
 from .conv import *
 from fastprogress import progress_bar, master_bar
 
-torch_device = "mps" if torch.backends.mps.is_available() else "gpu" if torch.cuda.is_available() else "cpu"
+torch_device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
 device = torch.device(torch_device)
 
-# %% ../nbs/clean/09_learner.ipynb 13
+# %% ../nbs/clean/09_learner.ipynb 14
 class Learner: pass
 
 class Callback: 
@@ -39,46 +39,69 @@ class Callback:
     def before_batch(self, learn: Learner): pass
     def after_batch(self, learn: Learner): pass
 
-# %% ../nbs/clean/09_learner.ipynb 14
+# %% ../nbs/clean/09_learner.ipynb 15
 def run_cbs(cbs, method_name, learn=None):
     for cb in sorted(cbs, key=attrgetter('order')):
         method = getattr(cb, method_name, None)
         if method is not None: method(learn)
 
-# %% ../nbs/clean/09_learner.ipynb 15
+# %% ../nbs/clean/09_learner.ipynb 16
 class CancelFitException(Exception): pass
 class CancelBatchException(Exception): pass
 class CancelEpochException(Exception): pass
 
-# %% ../nbs/clean/09_learner.ipynb 28
+# %% ../nbs/clean/09_learner.ipynb 29
 from torcheval.metrics import MulticlassAccuracy, Mean
 
-# %% ../nbs/clean/09_learner.ipynb 32
+# %% ../nbs/clean/09_learner.ipynb 33
 def to_cpu(x):
     if isinstance(x, Mapping): return {k: to_cpu(v) for k, v in x.items()}
     if isinstance(x, list): return [to_cpu(o) for o in x]
     if isinstance(x, tuple): return tuple(to_cpu(list(x)))
     return x.detach().cpu()
 
-# %% ../nbs/clean/09_learner.ipynb 33
+# %% ../nbs/clean/09_learner.ipynb 34
+class M(dict):
+    def __init__(self, d, epoch, train=True): 
+        super().__init__(d)
+        self.train = train
+        self.epoch = epoch
+
+class Recorder(list):
+    def __init__(self, *items): super().__init__(items)
+    def add(self, d, epoch, train): self.append(M(d, epoch, train))
+    def get_latest(self):
+        latest = {}
+        for k, v in self[-1].items():
+            latest[k] = f'{v:.3f}'
+        latest['epoch'] = self[-1].epoch
+        latest['train'] = self[-1].train   
+        return latest
+
+    def log_latest(self): print(self.get_latest())
+        
+    
 class MetricsCB(Callback):
     def __init__(self, *ms, **metrics):
-        for o in ms: 
-            print("registering metric", type(o).__name__)
-            metrics[type(o).__name__] = o
+        for o in ms: metrics[type(o).__name__] = o
+        self.recorder = Recorder()
         self.metrics = metrics
         self.all_metrics = copy(metrics)
         self.all_metrics['loss'] = self.loss = Mean()
         
-    def _log(self, d): print(d)
-    def before_fit(self, learn): learn.metrics = self
+    def before_fit(self, learn): 
+        learn.metrics = self
+        learn.recorder = self.recorder
+        
     def before_epoch(self, learn): [o.reset() for o in self.all_metrics.values()]
     
     def after_epoch(self, learn):
-        log = {k: f'{v.compute():.3f}' for k, v in self.all_metrics.items()}    
-        log['epoch'] = learn.epoch
-        log['train'] = 'train' if learn.model.training else 'eval'
-        self._log(log)
+        train = 'train' if learn.model.training else 'valid'
+        self.recorder.add({k: v.compute().item() for k, v in self.all_metrics.items()}, 
+                          learn.epoch, train)
+        self._log(self.recorder)
+    
+    def _log(self, recorder): recorder.log_latest()
     
     def after_batch(self, learn):
         with torch.no_grad():
@@ -86,14 +109,15 @@ class MetricsCB(Callback):
             for m in self.metrics.values(): m.update(to_cpu(learn.preds), y)
             self.loss.update(to_cpu(learn.loss), weight=len(x))
 
-# %% ../nbs/clean/09_learner.ipynb 34
+# %% ../nbs/clean/09_learner.ipynb 35
 class DeviceCB(Callback):
     def __init__(self, device=device): self.device = device
     def before_fit(self, learn):
         if hasattr(learn.model, 'to'): learn.model.to(self.device)
     def before_batch(self, learn): learn.batch = to_device(learn.batch, device=self.device)
 
-# %% ../nbs/clean/09_learner.ipynb 38
+# %% ../nbs/clean/09_learner.ipynb 39
+from IPython.core.debugger import set_trace
 class with_cbs:
     def __init__(self, name): self.name = name
     def __call__(self, f):
@@ -129,7 +153,7 @@ class Learner():
 
     @with_cbs('fit')
     def _fit(self, train, valid):
-        for self.epoch_idx, self.epoch in enumerate(self.epochs):
+        for self.epoch in self.epochs:
             if train: 
                 self.one_epoch(True)
             if valid:
@@ -138,7 +162,8 @@ class Learner():
    
     def one_epoch(self, train):
         self.model.train(train) 
-        self.dl = self.dls.train if train else self.dls.valid
+        self.dl = self.dls.train if train else self.dls.valid  
+        self.dl_len = len(self.dl)
         self._one_epoch(train)
 
     @with_cbs('epoch')
@@ -157,7 +182,8 @@ class Learner():
 
     # these are defined here to allow subclassing to customize behavior
     def predict(self): self.preds = self.model(self.batch[0])
-    def get_loss(self): self.loss = self.loss_func(self.preds, self.batch[1])
+    def get_loss(self): 
+        self.loss = self.loss_func(self.preds, self.batch[1])
     def backward(self): self.loss.backward()
     def step(self): self.opt.step()
     def zero_grad(self): self.opt.zero_grad()
@@ -168,7 +194,7 @@ class Learner():
     def training(self):
         return self.model.training
 
-# %% ../nbs/clean/09_learner.ipynb 40
+# %% ../nbs/clean/09_learner.ipynb 41
 class ProgressCB(Callback):
     order = MetricsCB.order + 1
     def __init__(self, plot=False): self.plot = plot
@@ -178,11 +204,12 @@ class ProgressCB(Callback):
         if hasattr(learn, 'metrics'): learn.metrics._log = self._log
         self.losses = []
         
-    def _log(self, d):
+    def _log(self, recorder):
+        d = recorder[-1]
         if self.first:
             self.mbar.write(list(d), table=True)
             self.first=False
-        self.mbar.write(list(d.values()), table=True)
+        self.mbar.write(list(f'{x:.3f}' for x in d.values()), table=True)
         
     def before_epoch(self, learn): 
         learn.dl = progress_bar(learn.dl, leave=False, parent=self.mbar)
@@ -193,7 +220,67 @@ class ProgressCB(Callback):
             self.losses.append(learn.loss.item())
             self.mbar.update_graph([[fc.L.range(self.losses), self.losses]])
 
-# %% ../nbs/clean/09_learner.ipynb 45
+# %% ../nbs/clean/09_learner.ipynb 43
+from torch.utils.tensorboard import SummaryWriter
+
+class TensorboardCB(Callback):
+    order = MetricsCB.order + 1    
+    def __init__(self, name=None): self.writer = SummaryWriter(comment=f'_{name}')
+
+    def after_batch(self, learner: Learner):        
+        # Log loss
+        train = 'train' if learn.model.training else 'valid'
+        idx = learn.dl_len*learn.epoch + learn.iter
+        self.writer.add_scalar(f'loss/{train}', learn.loss.item(), idx)     
+        self.writer.flush()
+
+    def after_epoch(self, learn: Learner):
+        if hasattr(learn, 'recorder'):
+            # Log all other metrics after each epoch
+            d = learn.recorder[-1]
+            for k, v in d.items():
+                if k == 'loss': continue
+                self.writer.add_scalar(f'{k}/{d.train}', v, d.epoch)    
+            self.writer.flush()
+            
+    def after_fit(self, learner: Learner): self.writer.close()
+
+# %% ../nbs/clean/09_learner.ipynb 44
+import wandb
+
+class Config(dict):
+    def __init__(self, ds, arch, **kwargs):
+        opts = { 'epochs': 5, 'lr': 1e-4 }
+        opts.update(kwargs)
+        super().__init__(ds=ds, arch=arch, **opts)
+
+    def __getattr__(self, key):
+        if key in self:
+            return self[key]
+        return super().__getattr__(self, key)
+
+class WandBCB(Callback):
+    order = MetricsCB.order + 1
+    def __init__(self, config: Config, project='fastai2022p2'): 
+        self.project = project
+        self.config = config
+        
+    def before_fit(self, learner: Learner): wandb.init(project=self.project, config=self.config)        
+    def after_fit(self, learner: Learner): wandb.finish()        
+
+    def after_batch(self, learner: Learner):
+        # Log loss
+        train = 'train' if learn.model.training else 'valid'
+        wandb.log({f'{train}/loss': learn.loss.item()})
+    
+    def after_epoch(self, learner: Learner):
+        if not hasattr(learn, 'recorder'): return # skip if we don't have metrics to log
+        # Log all metrics
+        latest = learn.recorder[-1]
+        wandb.log({f'{latest.train}/{k}': v for k, v in latest.items()})    
+
+
+# %% ../nbs/clean/09_learner.ipynb 48
 class MomentumLearner(Learner):
     def __init__(self, model, dls, loss_func, lr=None, cbs=None, opt_func=optim.SGD, mom=0.85):
         self.mom = mom
@@ -205,10 +292,10 @@ class MomentumLearner(Learner):
                 # Instead of zeroing out the gradients, we just keep a residue
                 p.grad *= self.mom 
 
-# %% ../nbs/clean/09_learner.ipynb 51
+# %% ../nbs/clean/09_learner.ipynb 54
 from torch.optim.lr_scheduler import ExponentialLR
 
-# %% ../nbs/clean/09_learner.ipynb 52
+# %% ../nbs/clean/09_learner.ipynb 55
 class LRFinderCB(Callback):
     def __init__(self, gamma=1.3, max_mult=3, verbose=False): fc.store_attr()
     
@@ -234,12 +321,12 @@ class LRFinderCB(Callback):
         plt.plot(self.lrs, self.losses)
         plt.xscale('log')
 
-# %% ../nbs/clean/09_learner.ipynb 53
+# %% ../nbs/clean/09_learner.ipynb 56
 @fc.patch
 def lr_find(self: Learner, start_lr=1e-5, gamma=1.3, max_mult=3, max_epochs=10, verbose=False):
     self.fit(n_epochs=max_epochs, lr=start_lr, cbs=[DeviceCB(), LRFinderCB(gamma=gamma, max_mult=max_mult, verbose=verbose)])
 
-# %% ../nbs/clean/09_learner.ipynb 55
+# %% ../nbs/clean/09_learner.ipynb 58
 class SingleBatchCB(Callback):
     order = 1
     def __init__(self, verbose=False): self.verbose = verbose

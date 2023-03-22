@@ -42,7 +42,7 @@ def conv2d_col(img, kernel, device='cpu'):
     return (kernel_col @ img.view(-1)).view(n-k+1, n-k+1)
 
 # %% ../nbs/clean/07_convolutions.ipynb 61
-def conv(ni, nf, ks=3, stride=2, act=True):
+def conv(ni, nf, ks=3, stride=2, act=nn.ReLU):
     res = nn.Conv2d(ni, nf, stride=stride, kernel_size=ks, padding=ks//2)
     if act: res = nn.Sequential(res, nn.ReLU())
     return res
