@@ -14,8 +14,8 @@ from .datasets import *
 from .learner import * 
 
 # %% auto 0
-__all__ = ['set_seed', 'Hook', 'hook', 'Hooks', 'ActivationsHook', 'HooksCB', 'HistogramHook', 'get_hist', 'get_min',
-           'ActivationStats']
+__all__ = ['set_seed', 'Hook', 'hook', 'model_iter', 'Hooks', 'ActivationsHook', 'HooksCB', 'HistogramHook', 'get_hist',
+           'get_min', 'ActivationStats']
 
 # %% ../nbs/clean/10_activations.ipynb 5
 def set_seed(seed, deterministic=False):
@@ -38,11 +38,31 @@ def hook(func):
             return func(self, mod, inp, out)
     return HookFunc
 
-# %% ../nbs/clean/10_activations.ipynb 40
+# %% ../nbs/clean/10_activations.ipynb 41
+from IPython.core.debugger import set_trace
+
+def _model_iter(ms):
+    if len(ms) == 0:
+        return 
+    m, *rest = ms    
+    children = list(m.children())
+    if len(children) == 0:
+        yield m
+        
+    rest = children + rest
+    yield from _model_iter(rest)
+
+def model_iter(m):
+    return _model_iter([m])
+
+# %% ../nbs/clean/10_activations.ipynb 42
+from IPython.core.debugger import set_trace
+
 class Hooks(dict):
-    def __init__(self, ms, **hooks):
-        super().__init__({key: [t for t in (hook(m) for m in ms) if t is not None] 
-                          for key, hook in hooks.items()}) 
+    def __init__(self, *ms, **hooks):
+        hook_fns = {key: [t for t in (hook(l) for l in ms) if t is not None] 
+                          for key, hook in hooks.items()}
+        super().__init__(hook_fns) 
         
     def __enter__(self, *args): return self
 
@@ -57,7 +77,7 @@ class Hooks(dict):
         self[key].remove()
         super().__delitem__(key)
 
-# %% ../nbs/clean/10_activations.ipynb 41
+# %% ../nbs/clean/10_activations.ipynb 44
 class ActivationsHook(Hook):
     def __init__(self, m): 
         super().__init__(m)
@@ -66,7 +86,7 @@ class ActivationsHook(Hook):
     def __call__(self, m, inp, out):
         self.acts.append(to_cpu(out))
 
-# %% ../nbs/clean/10_activations.ipynb 45
+# %% ../nbs/clean/10_activations.ipynb 48
 class HooksCB(Callback):
     def __init__(self, hook, module_filter=fc.noop, on_train=True, on_valid=False, modules=None):
         fc.store_attr()
@@ -75,7 +95,7 @@ class HooksCB(Callback):
     def before_fit(self, learn: Learner):
         if self.modules: modules=self.modules
         else: modules = fc.filter_ex(learn.model.modules(), self.module_filter)
-        self.hooks = Hooks(modules, hook=partial(self.hookfunc, learn))
+        self.hooks = Hooks(*modules, hook=partial(self.hookfunc, learn))
     
     def hookfunc(self, learn: Learner, *args, **kwargs):
         if (self.on_train and learn.training) or (self.on_valid and not learn.training):
@@ -93,7 +113,7 @@ class HooksCB(Callback):
             return len(self.hooks[list(self.hooks.keys())[0]])
         return len(self.hooks)
 
-# %% ../nbs/clean/10_activations.ipynb 50
+# %% ../nbs/clean/10_activations.ipynb 53
 class HistogramHook(Hook):
     def __init__(self, m):
         super().__init__(m)
@@ -105,14 +125,14 @@ class HistogramHook(Hook):
         self.stats[1].append(acts.std())
         self.stats[2].append(acts.abs().histc(50, 0, 10))
 
-# %% ../nbs/clean/10_activations.ipynb 52
+# %% ../nbs/clean/10_activations.ipynb 55
 def get_hist(h): return torch.stack(h.stats[2]).t().float().log1p()
 
 def get_min(h): # Proportion of the smallest 2% activations compared to the rest
     h1 = torch.stack(h.stats[2]).t().float()
     return h1[0]/h1.sum(0)
 
-# %% ../nbs/clean/10_activations.ipynb 57
+# %% ../nbs/clean/10_activations.ipynb 60
 class ActivationStats(HooksCB):
     def __init__(self, mod_filter=fc.noop):
         super().__init__(HistogramHook, mod_filter)
