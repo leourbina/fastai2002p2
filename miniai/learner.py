@@ -71,9 +71,7 @@ class Recorder(list):
     def __init__(self, *items): super().__init__(items)
     def add(self, d, epoch, train): self.append(M(d, epoch, train))
     def get_latest(self):
-        latest = {}
-        for k, v in self[-1].items():
-            latest[k] = f'{v:.3f}'
+        latest = dict(self[-1].items())
         latest['epoch'] = self[-1].epoch
         latest['train'] = self[-1].train   
         return latest
@@ -204,12 +202,16 @@ class ProgressCB(Callback):
         if hasattr(learn, 'metrics'): learn.metrics._log = self._log
         self.losses = []
         
+    def _format_metric(self, m):
+        if isinstance(m, float): return f'{m:.3f}'
+        return m
+        
     def _log(self, recorder):
-        d = recorder[-1]
+        d = recorder.get_latest()
         if self.first:
             self.mbar.write(list(d), table=True)
             self.first=False
-        self.mbar.write(list(f'{x:.3f}' for x in d.values()), table=True)
+        self.mbar.write(list(self._format_metric(x) for x in d.values()), table=True)
         
     def before_epoch(self, learn): 
         learn.dl = progress_bar(learn.dl, leave=False, parent=self.mbar)
