@@ -76,14 +76,16 @@ init_layers = (
     nn.ConvTranspose3d, 
     nn.Linear)
 
-# %% ../nbs/clean/11_initializing.ipynb 39
+# %% ../nbs/clean/11_initializing.ipynb 40
+import fastcore.all as fc
+
 class BatchTfmCB(Callback):
     def __init__(self, tfm, on_train=True, on_val=True): fc.store_attr()
     def before_batch(self, learn: Learner): 
         if (self.on_train and learn.training) or (self.on_val and not learn.training):
             learn.batch = self.tfm(learn.batch)
 
-# %% ../nbs/clean/11_initializing.ipynb 46
+# %% ../nbs/clean/11_initializing.ipynb 47
 class GeneralReLU(nn.Module):
     def __init__(self, leak=None, sub=None, maxv=None):
         super().__init__()
@@ -95,7 +97,7 @@ class GeneralReLU(nn.Module):
         if self.maxv is not None: x.clamp_max_(self.maxv)
         return x
 
-# %% ../nbs/clean/11_initializing.ipynb 47
+# %% ../nbs/clean/11_initializing.ipynb 48
 def plot_func(f, start=-5, end=5, steps=100):
     x = torch.linspace(start, end, steps)
     plt.plot(x, f(x))
@@ -103,18 +105,18 @@ def plot_func(f, start=-5, end=5, steps=100):
     plt.axhline(y=0, color='k', linewidth=0.5)
     plt.axvline(x=0, color='k', linewidth=0.5)
 
-# %% ../nbs/clean/11_initializing.ipynb 51
+# %% ../nbs/clean/11_initializing.ipynb 52
 def init_weights(m, leaky=0.):
     if isinstance(m, init_layers): init.kaiming_normal_(m.weight, a=leaky)
 
-# %% ../nbs/clean/11_initializing.ipynb 58
+# %% ../nbs/clean/11_initializing.ipynb 59
 @hook
 def lsuv_stats(hook, mod, inp, out):
     acts = to_cpu(out)
     hook.mean = acts.mean()
     hook.std = acts.std()
 
-# %% ../nbs/clean/11_initializing.ipynb 59
+# %% ../nbs/clean/11_initializing.ipynb 60
 def lsuv_init(model, m, m_in, xb, verbose=False):
     lsuv = lsuv_stats(m) # only hook into the selected layers
     with torch.no_grad():  
@@ -126,7 +128,7 @@ def lsuv_init(model, m, m_in, xb, verbose=False):
                 print(f"Init: mean {lsuv.mean} std {lsuv.std}")
     lsuv.remove()
 
-# %% ../nbs/clean/11_initializing.ipynb 68
+# %% ../nbs/clean/11_initializing.ipynb 69
 from fastcore.all import risinstance
 
 act_layers = (    
@@ -155,7 +157,7 @@ class LSUVInitCB(Callback):
 
             
 
-# %% ../nbs/clean/11_initializing.ipynb 75
+# %% ../nbs/clean/11_initializing.ipynb 76
 batch_layers = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)
 
 def conv(ni, nf, ks=3, stride=3, act=nn.ReLU, norm=None, bias=None):
@@ -165,7 +167,7 @@ def conv(ni, nf, ks=3, stride=3, act=nn.ReLU, norm=None, bias=None):
     if act: layers.append(act())
     return nn.Sequential(*layers)
 
-# %% ../nbs/clean/11_initializing.ipynb 76
+# %% ../nbs/clean/11_initializing.ipynb 77
 def get_model(act=nn.ReLU, nfs=None, norm=None):
     if nfs is None: nfs = [1, 8, 16, 32, 64]
     layers = [conv(nfs[i], nfs[i+1], act=act, norm=norm) 
