@@ -273,7 +273,7 @@ class WandBCB(Callback):
         if self.config.save:
             model_path = Path(self.config.model_path + '/' + wandb.run.project)
             model_path.mkdir(exist_ok=True, parents=True)
-            torch.save(learn.model, model_path/wandb.run.name + ".pkl")
+            torch.save(learn.model, model_path/ f"{wandb.run.name}.pkl")
             print(f"Saved model to {model_path/wandb.run.name}")
             wandb.finish()        
 
