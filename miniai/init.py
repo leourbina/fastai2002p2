@@ -2,7 +2,8 @@
 
 # %% auto 0
 __all__ = ['init_layers', 'act_layers', 'batch_layers', 'clean_ipython_hist', 'clean_tb', 'clean_mem', 'BatchTfmCB',
-           'GeneralReLU', 'plot_func', 'init_weights', 'lsuv_stats', 'lsuv_init', 'LSUVInitCB', 'conv', 'get_model']
+           'GeneralReLU', 'plot_func', 'init_weights', 'lsuv_stats', 'lsuv_init', 'LSUVInitCB', 'conv', 'get_model',
+           'BaseConfig']
 
 # %% ../nbs/clean/11_initializing.ipynb 2
 import pickle
@@ -176,3 +177,27 @@ def get_model(act=nn.ReLU, nfs=None, norm=None):
         *layers, 
         conv(nfs[-1], 10, act=None, norm=False, bias=True),
         nn.Flatten()).to(device)
+
+# %% ../nbs/clean/11_initializing.ipynb 91
+from pydantic.dataclasses import dataclass
+from dataclasses import asdict
+from functools import partial
+
+@dataclass
+class BaseConfig():
+    ds: str
+    arch: str
+    project: str
+    epochs: int = 5
+    lr:float = 3e-3
+    betas= (0.9, 0.95)
+    batch_size: int = 64
+    bias:bool = True
+    model_path:str = 'models'
+    save: bool = False
+    max_to_keep: int = 1
+    attn_dropout: float = 0.0
+    dropout: float = 0.01
+    
+    leak = 0.1
+    act = partial(GeneralReLU, leak=leak, sub=0.4)

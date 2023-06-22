@@ -264,11 +264,10 @@ class Config(dict):
 
 class WandBCB(Callback):
     order = MetricsCB.order + 1
-    def __init__(self, config: Config, project='fastai2022p2'): 
-        self.project = project
+    def __init__(self, config: Config): 
         self.config = config
         
-    def before_fit(self, learn: Learner): wandb.init(project=self.project, config=self.config)        
+    def before_fit(self, learn: Learner): wandb.init(project=self.config.project, config=self.config)        
     def after_fit(self, learn: Learner): 
         if self.config.save:
             model_path = Path(self.config.model_path + '/' + wandb.run.project)
